@@ -23,14 +23,52 @@ def main() -> None:
     owner.add_pet(buddy)
     owner.add_pet(whiskers)
 
-    buddy.add_task(Task(1, buddy.pet_id, "Morning walk", Category.WALK, 30,
-                        Priority.HIGH, at(today, 7, 30), recurrence=Recurrence.DAILY))
-    buddy.add_task(Task(2, buddy.pet_id, "Grooming brush-out", Category.GROOMING, 20,
-                        Priority.LOW, at(today, 18, 0)))
-    whiskers.add_task(Task(1, whiskers.pet_id, "Breakfast", Category.FEEDING, 10,
-                           Priority.HIGH, at(today, 8, 0), recurrence=Recurrence.DAILY))
-    whiskers.add_task(Task(2, whiskers.pet_id, "Thyroid medication", Category.MEDICATION, 5,
-                           Priority.HIGH, at(today, 12, 30)))
+    buddy.add_task(
+        Task(
+            1,
+            buddy.pet_id,
+            "Morning walk",
+            Category.WALK,
+            30,
+            Priority.HIGH,
+            at(today, 7, 30),
+            recurrence=Recurrence.DAILY,
+        )
+    )
+    buddy.add_task(
+        Task(
+            2,
+            buddy.pet_id,
+            "Grooming brush-out",
+            Category.GROOMING,
+            20,
+            Priority.LOW,
+            at(today, 18, 0),
+        )
+    )
+    whiskers.add_task(
+        Task(
+            1,
+            whiskers.pet_id,
+            "Breakfast",
+            Category.FEEDING,
+            10,
+            Priority.HIGH,
+            at(today, 8, 0),
+            recurrence=Recurrence.DAILY,
+        )
+    )
+    whiskers.add_task(
+        Task(
+            2,
+            whiskers.pet_id,
+            "Thyroid medication",
+            Category.MEDICATION,
+            5,
+            Priority.HIGH,
+            at(today, 12, 30),
+        )
+    )
 
     schedule = owner.get_schedule(today)
 

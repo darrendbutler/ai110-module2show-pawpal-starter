@@ -30,7 +30,7 @@ I handled the following fixes.
 
 ##### Fix 1: pet_id on Task
 
-I added pet_id to task so the Pet and Task class are appropriately linked such that each pet has tasks associated with it. The intial version left out the pet_id which caused a missing realtionship. Also, adding the field wasn't enough on its own. Nothing stopped someone from adding a task with pet_id=99 to pet 10, which would silently break the link. So Pet.add_task now raises ValueError on a mismatch and otherwise appends. I used an ID instead of a Pet object reference to avoid a circular Pet ↔ Task reference, which would make repr recurse forever.
+I added pet_id to task so the Pet and Task class are appropriately linked such that each pet has tasks associated with it. The initial version left out the pet_id which caused a missing realtionship. Also, adding the field wasn't enough on its own. Nothing stopped someone from adding a task with pet_id=99 to pet 10, which would silently break the link. So Pet.add_task now raises ValueError on a mismatch and otherwise appends. I used an ID instead of a Pet object reference to avoid a circular Pet ↔ Task reference, which would make repr recurse forever.
 
 ##### Fix 2: clear start_time and end_time
 The original due_time field was ambiguous: it could mean a deadline or a start time. I renamed it to start_time so it unambiguously means when the task begins. Also, I made end_time a derived property, instead of a stored field, so it can never disagree with duration_minutes after reschedule. The UML marks it "(derived)". This helps reduce schedule conflict.
@@ -63,7 +63,7 @@ The LLM gave me the following
 
 > Design a UML class diagram for an app that helps a pet owner plan care tasks for their pet with Owner, Pet, Task, and Schedule classes. Explain the relationships. Provide the UML diagram as Mermaid.js code.
 
-The suggestion revealed a tension I was experiencing between the realtionship of owner and schedule. The instructions and example output suggest that the schedule should belong to a pet so I designed the architecture for that, but I was bothered by the idea. If an owner has multiple pets, then pet schedules might conflict. Assuming the owner is accomplishing tasks, then it would be more appropriate for the schedule to belong to the owner and each task belong to a pet to more easily prevent task conflicts in the schedule followed by an owner. There's also the case that there could be multiple owners for a single pet and a task could be assinged to an owner and a pet, but for the sake of simplicity I'm going to assume that this app is meant to be used by a single person rather than a care team or each pet has one active care person assinged at a time.
+The suggestion revealed a tension I was experiencing between the relationship of owner and schedule. The instructions and example output suggest that the schedule should belong to a pet so I designed the architecture for that, but I was bothered by the idea. If an owner has multiple pets, then pet schedules might conflict. Assuming the owner is accomplishing tasks, then it would be more appropriate for the schedule to belong to the owner and each task belong to a pet to more easily prevent task conflicts in the schedule followed by an owner. There's also the case that there could be multiple owners for a single pet and a task could be assinged to an owner and a pet, but for the sake of simplicity I'm going to assume that this app is meant to be used by a single person rather than a care team or each pet has one active care person assinged at a time.
 
 
 The LLM gave me the following:
@@ -137,9 +137,7 @@ I haven't written this into [reflection.md](reflection.md) or the repo's UML fil
 
 #### Round 2
 
-After asking the AI if there are missing relationships or potential bottlenecks.
-
-
+After asking the AI if there are missing relationships or potential bottlenecks, I verified each bottle neck by tracing the code myself. I decided that the recommendations were fair and wouldn't interfere with the assignment.
 
 ---
 
@@ -164,10 +162,14 @@ After asking the AI if there are missing relationships or potential bottlenecks.
 - How did you use AI tools during this project (for example: design brainstorming, debugging, refactoring)?
 - What kinds of prompts or questions were most helpful?
 
+I worked with Claude to design the initial system. Here it was helpful to specify that objects that I though would be relevant to turn into classes. I offered initial feedback when I noticed model left out relationships between classes like not creating a pet_id field in task to create the pet-task relationship. It was helpful to add details such as expected relationships, and then ask the AI if there were any details I had missed. The AI was also helpful in refactoring when I wanted to program defensively. For example, the AI noticed that priority was initially only using an int datatype which inherently doesn't limit values while preserving orders, so it recommended an Enum data type and created a class for Priority, which was a stronger implementation.
+
 **b. Judgment and verification**
 
 - Describe one moment where you did not accept an AI suggestion as-is.
 - How did you evaluate or verify what the AI suggested?
+
+The Ai initially suggested a due_time for tasks. It assumed that tasks should be shown according to a deadline. I thought this wsa confusing so I instead changed due_time to start_time. I then worked with the AI to implement the logic for setting a start_time and duration to derive an end time. I verified that this worked by creating a task object in main.py with a start and duration, and ensuring that the end time was correct when printed. 
 
 ---
 

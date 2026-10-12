@@ -30,6 +30,7 @@ class Recurrence(Enum):
 
     @property
     def interval(self) -> timedelta | None:
+        """Return the time between occurrences, or None if not recurring."""
         return {Recurrence.DAILY: timedelta(days=1), Recurrence.WEEKLY: timedelta(weeks=1)}.get(self)
 
 
@@ -46,6 +47,7 @@ class Task:
     recurrence: Recurrence = Recurrence.NONE
 
     def __post_init__(self) -> None:
+        """Validate the duration and coerce category and priority to their enums."""
         if self.duration_minutes <= 0:
             raise ValueError("duration_minutes must be positive")
         self.category = Category(self.category)
@@ -81,6 +83,7 @@ class Pet:
     tasks: list[Task] = field(default_factory=list)
 
     def __post_init__(self) -> None:
+        """Reject a negative age."""
         if self.age < 0:
             raise ValueError("age cannot be negative")
 
@@ -123,6 +126,7 @@ class Owner:
     schedules: dict[date, Schedule] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        """Reject an email address that lacks an '@'."""
         if "@" not in self.email:
             raise ValueError("email must contain '@'")
 
