@@ -2,20 +2,58 @@
 
 ## 1. System Design
 
-**a. Initial design**
+### **a. Initial design**
 
 - Briefly describe your initial UML design.
-  - Before prompting an LLM, I identified the objects in the prompt. The objects include Owner, Pet, Task, and Schedule. I think an Owner would have a name and Pets attributes. Pets would have a name, breed, species and Owners attribute. Tasks would have a duration, priority, and Schedule attributes. Schedule would have a tasks, pet, and owner attribute. Pets can have multiple owners. Owners can have multiple pets. Tasks can belong to one schedule. Schedule can have multiple tasks for the owner. I've decided because owners can have multiple pets, that each task should correspond to one pet.
-
 - What classes did you include, and what responsibilities did you assign to each?
+  - Before prompting an LLM, I identified the objects in the prompt. The objects include Owner, Pet, Task, and Schedule. I think an Owner would have a name and Pets attributes. Pets would have a name, breed, species and Owners attribute. Tasks would have a duration, priority, and Schedule attributes. Schedule would have a tasks, pet, and owner attribute. Pets can have multiple owners. Owners can have multiple pets. Tasks can belong to one schedule. Schedule can have multiple tasks for the owner. I've decided because owners can have multiple pets, that each task should correspond to one pet.
   - I included classes for Owner, Pet, Task, and Schedule. Owners is responsible for holding information about Owners such as their name and the Pets they own. Pets is responsible for structuring information about pets including name, species, breed, the owner they belong to, and their schedule. Schedule is storing tasks and the pet the schedule belongs to. Task is responsible for tracking the duration and priority of the task.
+  - After prompting the 
 
-**b. Design changes**
+### **b. Design changes**
 
 - Did your design change during implementation?
 - If yes, describe at least one change and why you made it.
 
-*TLDR: I decided to change the structure so the owner owns the schedule such that the owner is not double booked with tasks for different pets at the same time.*
+#### *TLDR:* 
+
+I decided to change the structure so the owner owns the schedule such that the owner is not double booked with tasks for different pets at the same time. When I asked about missing relationships, it revealed that...
+
+Some missing relationships were:
+
+- There was no attribute to link task to pet to task.
+- There was no schedule field to link owner and schedule.
+- It recommended including a recurrence field for the task class.
+- It recommended changing data types of category to enum to prevent misspelling and specifying a documented range for priority.
+
+I handled the following fixes.
+
+##### Fix 1: pet_id on Task
+
+I added pet_id to task so the Pet and Task class are appropriately linked such that each pet has tasks associated with it. The intial version left out the pet_id which caused a missing realtionship. Also, adding the field wasn't enough on its own. Nothing stopped someone from adding a task with pet_id=99 to pet 10, which would silently break the link. So Pet.add_task now raises ValueError on a mismatch and otherwise appends. I used an ID instead of a Pet object reference to avoid a circular Pet ↔ Task reference, which would make repr recurse forever.
+
+##### Fix 2: clear start_time and end_time
+The original due_time field was ambiguous: it could mean a deadline or a start time. I renamed it to start_time so it unambiguously means when the task begins. Also, I made end_time a derived property, instead of a stored field, so it can never disagree with duration_minutes after reschedule. The UML marks it "(derived)". This helps reduce schedule conflict.
+
+##### Fix 3: day filter in Schedule.generate
+generate originally pulled in every pending task, so a schedule for Tuesday would include tasks from every other day. It now rebuilds entries from scratch and keeps only pending tasks that start on the schedule's day. Rebuilding makes it safe to call twice without duplicating tasks.
+
+##### Fix 4: Owner holds one schedule per day
+The skeleton had Owner.get_schedule() with no day, even though a Schedule belongs to a single day. get_schedule(day) now takes a day, rebuilds the schedule from current tasks, and stores it in Owner.schedules. Rebuilding every time means a rescheduled or completed task never leaves a stale schedule behind. This also keeps the schedule owned by the owner, so tasks for different pets are checked against each other.
+
+##### Fix 5: Recurrence on Task
+A task had one start time and a completed flag, so a "feed daily" task would be finished forever after one completion. I added a Recurrence enum (none, daily, weekly). Completing a recurring task through Pet.complete_task creates the next occurrence as a new task, which keeps the completed one in history.
+
+##### Fix 6: Enums for category and priority
+Category was a free string, so "walk" and "Walk" were different, and priority was a bare int with no meaning. Category is now an enum, and Priority is an IntEnum (LOW=1, MEDIUM=2, HIGH=3, higher means more urgent). Invalid values now raise an error instead of silently being accepted.
+
+##### Fix 7: Conflict detection and ordering
+detect_conflicts returned a flat list of tasks, which doesn't say which tasks clash. It now returns the overlapping pairs, checked across all pets, because the owner can only do one thing at a time. It sorts by start time and sweeps instead of comparing every pair, which is O(n log n) rather than O(n squared). get_ordered_tasks now has a stated rule: start time first, then higher priority, then lower task_id.
+
+##### Fix 8: Identity and validation
+Removing a task or pet compared every field, so two identical-looking tasks were treated as the same. Removal and duplicate checks now go by task_id and pet_id, and adding a duplicate raises an error. I also added basic validation: duration must be positive, age can't be negative, and email must contain an @.
+
+#### Round 1
 
 Now, I'm going to prompt the LLM to see if it has any suggestions on my idea with with the following prompt.
 
@@ -97,7 +135,11 @@ classDiagram
 
 I haven't written this into [reflection.md](reflection.md) or the repo's UML file. If you want it saved, I can add it to either.
 
----
+#### Round 2
+
+After asking the AI if there are missing relationships or potential bottlenecks.
+
+
 
 ---
 

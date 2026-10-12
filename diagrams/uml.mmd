@@ -1,15 +1,83 @@
 classDiagram
-    %% Replace the placeholders below with your actual classes, attributes, methods, and relationships.
-    %% Keep this file updated so it matches your final implementation.
-
-    class ClassName {
-        +type attribute
-        +method() returnType
+    class Owner {
+        +int owner_id
+        +str name
+        +str email
+        +List~Pet~ pets
+        +Dict~date, Schedule~ schedules
+        +add_pet(pet: Pet)
+        +remove_pet(pet: Pet)
+        +get_schedule(day: date) Schedule
     }
 
-    class AnotherClass {
-        +type attribute
-        +method() returnType
+    class Pet {
+        +int pet_id
+        +str name
+        +str species
+        +int age
+        +List~Task~ tasks
+        +add_task(task: Task)
+        +remove_task(task: Task)
+        +get_pending_tasks() List~Task~
+        +complete_task(task: Task) Task
     }
 
-    ClassName --> AnotherClass : relationship
+    class Task {
+        +int task_id
+        +int pet_id
+        +str description
+        +Category category
+        +int duration_minutes
+        +Priority priority
+        +datetime start_time
+        +datetime end_time (derived)
+        +bool completed
+        +Recurrence recurrence
+        +mark_complete()
+        +reschedule(new_time: datetime)
+        +next_occurrence(new_id: int) Task
+    }
+
+    class Schedule {
+        +date day
+        +List~Task~ entries
+        +generate(owner: Owner) filters by day
+        +add_entry(task: Task)
+        +detect_conflicts() List~Tuple~Task, Task~~
+        +get_ordered_tasks() List~Task~
+    }
+
+    class Category {
+        <<enumeration>>
+        FEEDING
+        WALK
+        MEDICATION
+        GROOMING
+        VET
+        PLAY
+        OTHER
+    }
+
+    class Priority {
+        <<enumeration>>
+        LOW = 1
+        MEDIUM = 2
+        HIGH = 3
+    }
+
+    class Recurrence {
+        <<enumeration>>
+        NONE
+        DAILY
+        WEEKLY
+    }
+
+    Owner "1" *-- "0..*" Pet : owns
+    Pet "1" *-- "0..*" Task : has
+    Schedule "1" o-- "0..*" Task : organizes
+    Owner "1" --> "0..*" Schedule : plans with (one per day)
+    Schedule ..> Owner : reads pets from
+    Task ..> Pet : pet_id refers to
+    Task --> Category
+    Task --> Priority
+    Task --> Recurrence
