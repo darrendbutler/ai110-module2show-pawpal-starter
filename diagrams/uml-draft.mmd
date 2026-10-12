@@ -1,0 +1,48 @@
+classDiagram
+    class Owner {
+        +int owner_id
+        +str name
+        +str email
+        +List~Pet~ pets
+        +add_pet(pet: Pet)
+        +remove_pet(pet: Pet)
+        +get_schedule() Schedule
+    }
+
+    class Pet {
+        +int pet_id
+        +str name
+        +str species
+        +int age
+        +List~Task~ tasks
+        +add_task(task: Task)
+        +remove_task(task: Task)
+        +get_pending_tasks() List~Task~
+    }
+
+    class Task {
+        +int task_id
+        +str description
+        +str category
+        +int duration_minutes
+        +int priority
+        +datetime due_time
+        +bool completed
+        +mark_complete()
+        +reschedule(new_time: datetime)
+    }
+
+    class Schedule {
+        +date day
+        +List~Task~ entries
+        +generate(owner: Owner)
+        +add_entry(task: Task)
+        +detect_conflicts() List~Task~
+        +get_ordered_tasks() List~Task~
+    }
+
+    Owner "1" *-- "0..*" Pet : owns
+    Pet "1" *-- "0..*" Task : has
+    Schedule "1" o-- "0..*" Task : organizes
+    Owner "1" --> "1" Schedule : plans with
+    Schedule ..> Owner : reads pets from
