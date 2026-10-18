@@ -97,14 +97,29 @@ Sample test output:
 
 ## 📐 Smarter Scheduling
 
-> Fill in once you've implemented scheduling logic.
+All of these live in `pawpal_system.py`. The scheduling methods are on `Schedule` (the plan for one day); recurrence is on `Task` and `Pet`.
 
-| Feature           | Method(s) | Notes                             |
-| ----------------- | --------- | --------------------------------- |
-| Task sorting      |           | e.g., by priority, duration       |
-| Filtering         |           | e.g., skip tasks if time runs out |
-| Conflict handling |           | e.g., overlapping time slots      |
-| Recurring tasks   |           | e.g., daily vs. weekly            |
+| Feature                    | Method(s)                                    | Notes                                                                                                                                      |
+| -------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Sorting (in place)         | `Schedule.sort_by_time()`                    | Reorders `entries` by `start_time` and returns them. Stable, so equal start times keep their existing order. O(n log n).                   |
+| Sorting (display order)    | `Schedule.get_ordered_tasks()`               | Returns a new sorted list without changing `entries`. Ties go to higher priority, then lower `task_id`.                                    |
+| Filtering                  | `Schedule.filter_tasks(owner, completed, pet_name)` | Filter by completion status, pet name, or both. A filter left as `None` is ignored. Pet names match case-insensitively; an unknown name returns an empty list. |
+| Conflict detection         | `Schedule.detect_conflicts()`                | Sorts by start time, then sweeps once, keeping only the tasks still running. Returns every overlapping pair in O(n log n + overlaps). Windows are half-open, so back-to-back tasks don't conflict. Checks across all pets and covers identical start times. |
+| Conflict warnings          | `Schedule.conflict_warnings(owner)`          | Turns each conflicting pair into a readable message, marked "both for Buddy" (same pet) or "Buddy vs Whiskers" (different pets). Returns a list instead of raising, so a conflict never crashes the app. `app.py` shows each one with `st.warning`. |
+| Recurring tasks            | `Task.next_occurrence(new_id)`, `Pet.complete_task(task)` | `complete_task` marks the task done and, for a `DAILY` or `WEEKLY` task, appends the next occurrence, which `next_occurrence` builds as a copy shifted by the recurrence interval. If that time is already past (an overdue task), it advances in whole intervals until it is in the future, keeping the original time of day. Completing the same task twice returns `None` and creates no duplicate. |
+
+### Example
+
+```python
+schedule = owner.get_schedule(today)
+
+schedule.sort_by_time()                                    # earliest first
+schedule.filter_tasks(owner, completed=False, pet_name="Buddy")  # Buddy's pending tasks
+schedule.conflict_warnings(owner)                          # ["Warning: 'Vet visit' (03:00 PM-03:30 PM) overlaps 'Playtime' ... [Buddy vs Whiskers]"]
+buddy.complete_task(task)                                  # also creates tomorrow's task if it recurs
+```
+
+`python main.py` runs each of these on sample data, including tasks added out of order and tasks at the same time.
 
 ## 📸 Demo Walkthrough
 

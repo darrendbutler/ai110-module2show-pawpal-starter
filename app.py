@@ -149,8 +149,5 @@ if st.button("Generate schedule"):
                 for t in ordered
             ]
         )
-        for a, b in schedule.detect_conflicts():
-            st.warning(
-                f"Conflict: '{a.description}' ({pet_names[a.pet_id]}) overlaps "
-                f"'{b.description}' ({pet_names[b.pet_id]})"
-            )
+        for warning in schedule.conflict_warnings(owner):
+            st.warning(warning)

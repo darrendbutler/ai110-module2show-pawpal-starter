@@ -70,7 +70,17 @@ class Task:
         self.start_time = new_time
 
     def next_occurrence(self, new_id: int) -> Task | None:
-        """Return the next pending instance of a recurring task, or None."""
+        """Return the next pending instance of a recurring task, or None.
+
+        Args:
+            new_id: task_id to give the new instance (must be unique for the pet).
+
+        Returns:
+            A copy of this task, not completed, starting one interval (a day or
+            a week) later. If that time has already passed, the start is advanced
+            in whole intervals until it is in the future, so an overdue task
+            keeps its original time of day. None if the task does not recur.
+        """
         step = self.recurrence.interval
         if step is None:
             return None
@@ -125,8 +135,13 @@ class Pet:
     def complete_task(self, task: Task) -> Task | None:
         """Complete a task; if it recurs, add and return the next occurrence.
 
-        Returns None for non-recurring tasks and for tasks already completed,
-        so completing twice never creates duplicate occurrences.
+        Args:
+            task: a task belonging to this pet.
+
+        Returns:
+            The newly created next occurrence, which is also appended to
+            self.tasks. None for non-recurring tasks and for tasks already
+            completed, so completing twice never creates duplicate occurrences.
         """
         if task.completed:
             return None
@@ -205,8 +220,16 @@ class Schedule:
     ) -> list[Task]:
         """Return entries matching the given completion status and/or pet name.
 
-        A filter left as None is ignored. Pet names are matched case-insensitively
-        via owner.pets, since Task only stores pet_id. Entries keep their order.
+        Args:
+            owner: used to look up pet names, since Task only stores pet_id.
+            completed: True for finished tasks, False for pending ones, None to
+                ignore completion status.
+            pet_name: matched case-insensitively against owner.pets, or None to
+                ignore the pet.
+
+        Returns:
+            A new list in the existing entries order; entries is not modified.
+            Empty if nothing matches, including when pet_name is unknown.
         """
         pet_ids = None
         if pet_name is not None:
@@ -218,17 +241,53 @@ class Schedule:
             and (pet_ids is None or t.pet_id in pet_ids)
         ]
 
+    def conflict_warnings(self, owner: Owner) -> list[str]:
+        """Return a human-readable warning for each overlapping pair; never raises.
+
+        Args:
+            owner: used to turn pet ids into names for the message.
+
+        Returns:
+            One string per conflicting pair, with both tasks' times and either
+            "both for <pet>" (same pet) or "<pet> vs <pet>" (different pets).
+            Empty if the day is conflict-free. Reuses detect_conflicts; pet ids
+            missing from owner.pets are shown as "pet <id>".
+        """
+        names = {p.pet_id: p.name for p in owner.pets}
+        warnings = []
+        for a, b in self.detect_conflicts():
+            who_a = names.get(a.pet_id, f"pet {a.pet_id}")
+            who_b = names.get(b.pet_id, f"pet {b.pet_id}")
+            scope = f"both for {who_a}" if a.pet_id == b.pet_id else f"{who_a} vs {who_b}"
+            warnings.append(
+                f"Warning: '{a.description}' ({a.start_time:%I:%M %p}-{a.end_time:%I:%M %p}) "
+                f"overlaps '{b.description}' ({b.start_time:%I:%M %p}-{b.end_time:%I:%M %p}) "
+                f"[{scope}]"
+            )
+        return warnings
+
     def sort_by_time(self) -> list[Task]:
-        """Sort entries in place by start_time and return them; ties keep their existing order."""
+        """Sort entries in place by start_time and return them.
+
+        Unlike get_ordered_tasks, this mutates self.entries and does not use
+        priority. The sort is stable, so tasks with equal start times keep their
+        existing relative order. Cost is O(n log n).
+        """
         self.entries.sort(key=lambda t: t.start_time)
         return self.entries
 
     def detect_conflicts(self) -> list[tuple[Task, Task]]:
         """Return every pair of tasks whose [start_time, end_time) windows overlap.
 
-        Sweeps tasks in start order, so cost is O(n log n + overlaps) rather
-        than comparing all pairs. Applies across pets: the owner can only do
-        one thing at a time.
+        Sweeps tasks in start order, keeping only the tasks still running when
+        the next one starts, so cost is O(n log n + overlaps) rather than
+        comparing all pairs. Applies across pets: the owner can only do one
+        thing at a time. Windows are half-open, so a task that starts exactly
+        when another ends is not a conflict.
+
+        Returns:
+            (earlier, later) pairs, where earlier starts no later than later.
+            Does not modify entries.
         """
         conflicts: list[tuple[Task, Task]] = []
         active: list[Task] = []

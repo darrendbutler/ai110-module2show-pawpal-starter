@@ -1,6 +1,6 @@
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
-from pawpal_system import Category, Pet, Priority, Recurrence, Task
+from pawpal_system import Category, Owner, Pet, Priority, Recurrence, Task
 
 
 def make_task(task_id: int = 1, pet_id: int = 1) -> Task:
@@ -94,3 +94,48 @@ def test_overdue_daily_task_skips_past_occurrences():
 
     assert nxt.start_time > datetime.now()
     assert nxt.start_time - start == timedelta(days=4)  # stays on the original time of day
+
+
+def conflict_setup():
+    owner = Owner(1, "Darren", "d@example.com")
+    buddy, mia = Pet(1, "Buddy", "Dog", 4), Pet(2, "Mia", "Cat", 2)
+    owner.add_pet(buddy)
+    owner.add_pet(mia)
+    return owner, buddy, mia
+
+
+def timed_task(task_id, pet, hour, minute=0, duration=30):
+    return Task(
+        task_id, pet.pet_id, f"Task {task_id}", Category.WALK, duration, Priority.LOW,
+        datetime(2026, 10, 12, hour, minute),
+    )
+
+
+def test_conflict_warning_for_different_pets():
+    owner, buddy, mia = conflict_setup()
+    buddy.add_task(timed_task(1, buddy, 8))
+    mia.add_task(timed_task(1, mia, 8, 15))
+
+    warnings = owner.get_schedule(date(2026, 10, 12)).conflict_warnings(owner)
+
+    assert len(warnings) == 1
+    assert "Buddy vs Mia" in warnings[0]
+
+
+def test_conflict_warning_for_same_pet():
+    owner, buddy, _ = conflict_setup()
+    buddy.add_task(timed_task(1, buddy, 8))
+    buddy.add_task(timed_task(2, buddy, 8))  # identical start time
+
+    warnings = owner.get_schedule(date(2026, 10, 12)).conflict_warnings(owner)
+
+    assert len(warnings) == 1
+    assert "both for Buddy" in warnings[0]
+
+
+def test_back_to_back_tasks_do_not_conflict():
+    owner, buddy, mia = conflict_setup()
+    buddy.add_task(timed_task(1, buddy, 8, 0, duration=30))
+    mia.add_task(timed_task(1, mia, 8, 30))
+
+    assert owner.get_schedule(date(2026, 10, 12)).conflict_warnings(owner) == []

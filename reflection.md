@@ -153,6 +153,10 @@ After asking the AI if there are missing relationships or potential bottlenecks,
 - Describe one tradeoff your scheduler makes.
 - Why is that tradeoff reasonable for this scenario?
 
+My conflict detection (Schedule.detect_conflicts) sorts tasks by start time and sweeps through them once, keeping a short list of tasks still "in progress" to compare against. That runs in O(n log n + overlaps). The alternative was a simpler version that uses itertools.combinations to compare every pair of tasks, which is about three lines but O(n²). I chose the sweep, so the code is a bit harder to read: a reader has to understand why the active list is filtered on each step. In exchange, the cost grows more slowly as the number of tasks increases.
+
+I think it is reasonable because The cost of the readability loss is small. The sweep is about 7 lines and has a docstring explaining the approach. It's a standard technique, so it's not hard to maintain. Also, tasks accumulate. Recurring daily and weekly tasks create new instances each time one is completed, and completed tasks stay in pet.tasks. The number of tasks per owner grows over time, so I'd rather not have a quadratic cost waiting there.
+
 ---
 
 ## 3. AI Collaboration
