@@ -31,7 +31,10 @@ class Recurrence(Enum):
     @property
     def interval(self) -> timedelta | None:
         """Return the time between occurrences, or None if not recurring."""
-        return {Recurrence.DAILY: timedelta(days=1), Recurrence.WEEKLY: timedelta(weeks=1)}.get(self)
+        return {
+            Recurrence.DAILY: timedelta(days=1),
+            Recurrence.WEEKLY: timedelta(weeks=1),
+        }.get(self)
 
 
 @dataclass
@@ -71,7 +74,15 @@ class Task:
         step = self.recurrence.interval
         if step is None:
             return None
-        return replace(self, task_id=new_id, start_time=self.start_time + step, completed=False)
+        next_start = self.start_time + step
+        while next_start <= datetime.now():  # skip occurrences already in the past
+            next_start += step
+        return replace(
+            self,
+            task_id=new_id,
+            start_time=next_start,
+            completed=False,
+        )
 
 
 @dataclass
@@ -90,9 +101,13 @@ class Pet:
     def add_task(self, task: Task) -> None:
         """Attach a care task to this pet."""
         if task.pet_id != self.pet_id:
-            raise ValueError(f"Task {task.task_id} belongs to pet {task.pet_id}, not {self.pet_id}")
+            raise ValueError(
+                f"Task {task.task_id} belongs to pet {task.pet_id}, not {self.pet_id}"
+            )
         if any(t.task_id == task.task_id for t in self.tasks):
-            raise ValueError(f"Task {task.task_id} already exists for pet {self.pet_id}")
+            raise ValueError(
+                f"Task {task.task_id} already exists for pet {self.pet_id}"
+            )
         self.tasks.append(task)
 
     def remove_task(self, task: Task) -> None:
@@ -108,7 +123,13 @@ class Pet:
         return [t for t in self.tasks if not t.completed]
 
     def complete_task(self, task: Task) -> Task | None:
-        """Complete a task; if it recurs, add and return the next occurrence."""
+        """Complete a task; if it recurs, add and return the next occurrence.
+
+        Returns None for non-recurring tasks and for tasks already completed,
+        so completing twice never creates duplicate occurrences.
+        """
+        if task.completed:
+            return None
         task.mark_complete()
         new_id = max(t.task_id for t in self.tasks) + 1
         nxt = task.next_occurrence(new_id)
@@ -169,10 +190,38 @@ class Schedule:
     def add_entry(self, task: Task) -> None:
         """Add a task that starts on this schedule's day."""
         if task.start_time.date() != self.day:
-            raise ValueError(f"Task {task.task_id} does not start on {self.day}")
-        if any(e.pet_id == task.pet_id and e.task_id == task.task_id for e in self.entries):
+            raise ValueError(
+                f"Task {task.task_id} does not start on {self.day}"
+            )
+        if any(
+            e.pet_id == task.pet_id and e.task_id == task.task_id
+            for e in self.entries
+        ):
             raise ValueError(f"Task {task.task_id} is already scheduled")
         self.entries.append(task)
+
+    def filter_tasks(
+        self, owner: Owner, completed: bool | None = None, pet_name: str | None = None
+    ) -> list[Task]:
+        """Return entries matching the given completion status and/or pet name.
+
+        A filter left as None is ignored. Pet names are matched case-insensitively
+        via owner.pets, since Task only stores pet_id. Entries keep their order.
+        """
+        pet_ids = None
+        if pet_name is not None:
+            pet_ids = {p.pet_id for p in owner.pets if p.name.lower() == pet_name.lower()}
+        return [
+            t
+            for t in self.entries
+            if (completed is None or t.completed == completed)
+            and (pet_ids is None or t.pet_id in pet_ids)
+        ]
+
+    def sort_by_time(self) -> list[Task]:
+        """Sort entries in place by start_time and return them; ties keep their existing order."""
+        self.entries.sort(key=lambda t: t.start_time)
+        return self.entries
 
     def detect_conflicts(self) -> list[tuple[Task, Task]]:
         """Return every pair of tasks whose [start_time, end_time) windows overlap.
@@ -191,4 +240,6 @@ class Schedule:
 
     def get_ordered_tasks(self) -> list[Task]:
         """Return entries by start time; ties go to higher priority, then lower task_id."""
-        return sorted(self.entries, key=lambda t: (t.start_time, -t.priority, t.task_id))
+        return sorted(
+            self.entries, key=lambda t: (t.start_time, -t.priority, t.task_id)
+        )

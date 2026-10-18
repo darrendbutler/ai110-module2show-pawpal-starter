@@ -23,16 +23,16 @@ def main() -> None:
     owner.add_pet(buddy)
     owner.add_pet(whiskers)
 
-    buddy.add_task(
+    # Tasks are deliberately added out of chronological order.
+    whiskers.add_task(
         Task(
-            1,
-            buddy.pet_id,
-            "Morning walk",
-            Category.WALK,
-            30,
+            2,
+            whiskers.pet_id,
+            "Thyroid medication",
+            Category.MEDICATION,
+            5,
             Priority.HIGH,
-            at(today, 7, 30),
-            recurrence=Recurrence.DAILY,
+            at(today, 12, 30),
         )
     )
     buddy.add_task(
@@ -58,30 +58,52 @@ def main() -> None:
             recurrence=Recurrence.DAILY,
         )
     )
-    whiskers.add_task(
+    buddy.add_task(
         Task(
-            2,
-            whiskers.pet_id,
-            "Thyroid medication",
-            Category.MEDICATION,
-            5,
+            1,
+            buddy.pet_id,
+            "Morning walk",
+            Category.WALK,
+            30,
             Priority.HIGH,
-            at(today, 12, 30),
+            at(today, 7, 30),
+            recurrence=Recurrence.DAILY,
         )
     )
 
     schedule = owner.get_schedule(today)
+    pets_by_id = {p.pet_id: p for p in owner.pets}
+
+    def show(title: str, tasks: list[Task]) -> None:
+        print(f"\n{title}")
+        print("-" * 60)
+        if not tasks:
+            print("  (none)")
+        for task in tasks:
+            pet = pets_by_id[task.pet_id]
+            status = "done" if task.completed else "pending"
+            print(
+                f"  {task.start_time:%I:%M %p} - {task.end_time:%I:%M %p}  "
+                f"{task.description:<20} ({pet.name}, {status})"
+            )
 
     print(f"Today's Schedule for {owner.name} - {today:%A, %B %d, %Y}")
     print("=" * 60)
-    pets_by_id = {p.pet_id: p for p in owner.pets}
-    for task in schedule.get_ordered_tasks():
-        pet = pets_by_id[task.pet_id]
-        print(
-            f"{task.start_time:%I:%M %p} - {task.end_time:%I:%M %p}  "
-            f"{task.description:<20} ({pet.name}, {task.category.value}, "
-            f"{task.priority.name.lower()} priority)"
-        )
+
+    show("Entries as generated (insertion order)", schedule.entries)
+    show("sort_by_time()", schedule.sort_by_time())
+
+    # Mark one task done so the completion filter has something to find.
+    schedule.entries[0].mark_complete()
+
+    show("filter_tasks(completed=False)", schedule.filter_tasks(owner, completed=False))
+    show("filter_tasks(completed=True)", schedule.filter_tasks(owner, completed=True))
+    show("filter_tasks(pet_name='whiskers')", schedule.filter_tasks(owner, pet_name="whiskers"))
+    show(
+        "filter_tasks(completed=False, pet_name='Buddy')",
+        schedule.filter_tasks(owner, completed=False, pet_name="Buddy"),
+    )
+    show("filter_tasks(pet_name='Nobody')", schedule.filter_tasks(owner, pet_name="Nobody"))
 
     conflicts = schedule.detect_conflicts()
     if conflicts:
