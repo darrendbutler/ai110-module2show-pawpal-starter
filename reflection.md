@@ -169,7 +169,9 @@ I worked with Claude to design the initial system. Here it was helpful to specif
 - Describe one moment where you did not accept an AI suggestion as-is.
 - How did you evaluate or verify what the AI suggested?
 
-The Ai initially suggested a due_time for tasks. It assumed that tasks should be shown according to a deadline. I thought this wsa confusing so I instead changed due_time to start_time. I then worked with the AI to implement the logic for setting a start_time and duration to derive an end time. I verified that this worked by creating a task object in main.py with a start and duration, and ensuring that the end time was correct when printed. 
+The Ai initially suggested a due_time for tasks. It assumed that tasks should be shown according to a deadline. I thought this wsa confusing so I instead changed due_time to start_time. I then worked with the AI to implement the logic for setting a start_time and duration to derive an end time. I verified that this worked by creating a task object in main.py with a start and duration, and ensuring that the end time was correct when printed.
+
+
 
 ---
 
@@ -179,6 +181,8 @@ The Ai initially suggested a due_time for tasks. It assumed that tasks should be
 
 - What behaviors did you test?
 - Why were these tests important?
+
+
 
 **b. Confidence**
 
