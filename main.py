@@ -109,19 +109,20 @@ def main() -> None:
     print("-" * 60)
     print("\n".join(schedule.conflict_warnings(owner)) or "  No conflicts.")
 
-    # Add tasks that start at exactly the same time: one pair for different
+    # Explicit high IDs avoid clashing with the IDs auto-assigned to recurring
+    # instances. Add tasks that start at exactly the same time: one pair for different
     # pets (3:00 PM) and one pair for the same pet (10:00 AM).
     buddy.add_task(
-        Task(3, buddy.pet_id, "Vet visit", Category.VET, 30, Priority.HIGH, at(today, 15, 0))
+        Task(101, buddy.pet_id, "Vet visit", Category.VET, 30, Priority.HIGH, at(today, 15, 0))
     )
     whiskers.add_task(
-        Task(3, whiskers.pet_id, "Playtime", Category.PLAY, 20, Priority.LOW, at(today, 15, 0))
+        Task(101, whiskers.pet_id, "Playtime", Category.PLAY, 20, Priority.LOW, at(today, 15, 0))
     )
     buddy.add_task(
-        Task(4, buddy.pet_id, "Teeth brushing", Category.GROOMING, 10, Priority.LOW, at(today, 10, 0))
+        Task(102, buddy.pet_id, "Teeth brushing", Category.GROOMING, 10, Priority.LOW, at(today, 10, 0))
     )
     buddy.add_task(
-        Task(5, buddy.pet_id, "Training", Category.PLAY, 15, Priority.MEDIUM, at(today, 10, 0))
+        Task(103, buddy.pet_id, "Training", Category.PLAY, 15, Priority.MEDIUM, at(today, 10, 0))
     )
     schedule = owner.get_schedule(today)
     print("\nConflict check after adding same-time tasks")

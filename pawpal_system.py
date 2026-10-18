@@ -5,6 +5,9 @@ from datetime import date, datetime, timedelta
 from enum import Enum, IntEnum
 
 
+HORIZON_DAYS = 7  # how many days ahead recurring tasks are materialized
+
+
 class Category(Enum):
     FEEDING = "feeding"
     WALK = "walk"
@@ -48,6 +51,7 @@ class Task:
     start_time: datetime  # when the task starts; it runs for duration_minutes
     completed: bool = False
     recurrence: Recurrence = Recurrence.NONE
+    series_id: int | None = None  # shared by every instance of a recurring task
 
     def __post_init__(self) -> None:
         """Validate the duration and coerce category and priority to their enums."""
@@ -118,6 +122,8 @@ class Pet:
             raise ValueError(
                 f"Task {task.task_id} already exists for pet {self.pet_id}"
             )
+        if task.recurrence is not Recurrence.NONE and task.series_id is None:
+            task.series_id = task.task_id  # first instance names its series
         self.tasks.append(task)
 
     def remove_task(self, task: Task) -> None:
@@ -132,16 +138,52 @@ class Pet:
         """Return tasks that are not yet completed."""
         return [t for t in self.tasks if not t.completed]
 
+    def ensure_occurrences(self, horizon: date) -> list[Task]:
+        """Materialize future instances of every recurring series up to horizon.
+
+        Args:
+            horizon: last day (inclusive) that should have instances.
+
+        Returns:
+            The newly created tasks, also appended to self.tasks. For each series,
+            steps forward from its latest instance by one interval at a time,
+            skipping times already in the past and times the series already has,
+            so calling it repeatedly never creates duplicates. Tasks without a
+            series_id are ignored.
+        """
+        series: dict[int, list[Task]] = {}
+        for t in self.tasks:
+            if t.series_id is not None and t.recurrence.interval is not None:
+                series.setdefault(t.series_id, []).append(t)
+        now = datetime.now()
+        created: list[Task] = []
+        for instances in series.values():
+            latest = max(instances, key=lambda t: t.start_time)
+            step = latest.recurrence.interval
+            existing = {t.start_time for t in instances}
+            next_start = latest.start_time + step
+            while next_start.date() <= horizon:
+                if next_start > now and next_start not in existing:
+                    new_id = max(t.task_id for t in self.tasks) + 1
+                    nxt = replace(
+                        latest, task_id=new_id, start_time=next_start, completed=False
+                    )
+                    self.tasks.append(nxt)
+                    created.append(nxt)
+                next_start += step
+        return created
+
     def complete_task(self, task: Task) -> Task | None:
-        """Complete a task; if it recurs, add and return the next occurrence.
+        """Complete a task; if it recurs, make sure its next occurrence exists.
 
         Args:
             task: a task belonging to this pet.
 
         Returns:
-            The newly created next occurrence, which is also appended to
-            self.tasks. None for non-recurring tasks and for tasks already
-            completed, so completing twice never creates duplicate occurrences.
+            The next occurrence of a recurring task (newly created, or the one
+            already materialized), and None for non-recurring tasks and for tasks
+            already completed, so completing twice never creates duplicates.
+            Also tops up the rolling window of HORIZON_DAYS ahead.
 
         Raises:
             ValueError: if the task is not one of this pet's tasks.
@@ -151,11 +193,24 @@ class Pet:
         if task.completed:
             return None
         task.mark_complete()
-        new_id = max(t.task_id for t in self.tasks) + 1
-        nxt = task.next_occurrence(new_id)
-        if nxt is not None:
+        if task.recurrence.interval is None:
+            return None
+        if task.series_id is None:
+            task.series_id = task.task_id
+        nxt = task.next_occurrence(max(t.task_id for t in self.tasks) + 1)
+        existing = next(
+            (
+                t
+                for t in self.tasks
+                if t.series_id == task.series_id and t.start_time == nxt.start_time
+            ),
+            None,
+        )
+        if existing is None:
             self.tasks.append(nxt)
-        return nxt
+            existing = nxt
+        self.ensure_occurrences(date.today() + timedelta(days=HORIZON_DAYS))
+        return existing
 
 
 @dataclass
@@ -186,7 +241,13 @@ class Owner:
         raise ValueError(f"Pet {pet.pet_id} not found")
 
     def get_schedule(self, day: date) -> Schedule:
-        """Rebuild the schedule for a day from current tasks, so it is never stale."""
+        """Rebuild the schedule for a day from current tasks, so it is never stale.
+
+        Also tops up recurring tasks through the rolling HORIZON_DAYS window.
+        """
+        horizon = date.today() + timedelta(days=HORIZON_DAYS)
+        for pet in self.pets:
+            pet.ensure_occurrences(horizon)
         schedule = Schedule(day)
         schedule.generate(self)
         self.schedules[day] = schedule

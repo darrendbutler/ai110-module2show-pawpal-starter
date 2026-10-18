@@ -73,7 +73,7 @@ Ownership chain: Owner → Pet → Task. Each Task stores its pet_id and Pet.add
 
 1. Schedules are derived, not stored as the source of truth. Owner.get_schedule(day) creates a Schedule and calls generate(self). That walks owner.pets → pet.get_pending_tasks() and filters to tasks starting that day. Because it rebuilds each time, the schedule can't go stale after a task is edited, completed or rescheduled. The schedules dict is only a cache of the last result.
 
-2. Recurrence: Pet.complete_task(task) calls Task.next_occurrence, which uses dataclasses.replace to copy the task one day or week later. The copy gets a new ID (max existing ID + 1) and completed=False, and goes back onto the pet. The next day's schedule then picks it up on its own.
+2. Recurrence: a recurring task gets a series_id when it is added to a pet. Pet.ensure_occurrences(horizon) uses dataclasses.replace to copy each series' latest task forward one day or week at a time, up to a rolling HORIZON_DAYS (7) window. Each copy gets a new ID (max existing ID + 1) and completed=False, and skips times that are in the past or already exist. Owner.get_schedule calls it for every pet, and Pet.complete_task calls it too after marking a task done (using Task.next_occurrence to find the next instance), so upcoming days are already filled in and repeated calls never create duplicates.
 
 3. Ordering: get_ordered_tasks() sorts by start time. Ties go to higher priority, then to lower task_id.
 
@@ -81,10 +81,11 @@ Ownership chain: Owner → Pet → Task. Each Task stores its pet_id and Pet.add
 
 ## 🧪 Testing PawPal+
 
-The suite lives in `tests/test_pawpal.py` and has 18 tests covering the scheduling behaviors that matter most:
+The suite lives in `tests/test_pawpal.py` and has 26 tests covering the scheduling behaviors that matter most:
 
 - **Task and pet basics:** marking a task complete changes its status, and adding tasks to a pet grows its task list.
-- **Recurring tasks:** completing a daily task creates a new pending task exactly one day later (a weekly task, one week later), with a new ID and the same time of day. Non-recurring tasks create nothing, and completing the same task twice never creates a duplicate. An overdue recurring task rolls forward in whole intervals to the next future time. A recurring task is only scheduled one occurrence at a time, so days further out are empty until the next one is completed.
+- **Recurring tasks (completion):** completing a daily task creates a new pending task exactly one day later (a weekly task, one week later), with a new ID and the same time of day. Non-recurring tasks create nothing, and completing the same task twice never creates a duplicate. An overdue recurring task rolls forward in whole intervals to the next future time. If the next instance was already created ahead of time, completing returns it instead of adding another.
+- **Recurring tasks (rolling window):** adding a recurring task starts a series (`series_id`); non-recurring tasks get none. `ensure_occurrences` fills a series with one pending instance per interval through the horizon, skips times in the past, ignores non-recurring tasks, and is idempotent, so a second call with the same horizon creates nothing. Completing a task tops the window up to today + `HORIZON_DAYS`. `get_schedule` shows upcoming instances of a never-completed daily task, and days beyond the 7-day window stay empty.
 - **Sorting:** tasks added out of order, across multiple pets, come back in chronological order from both `sort_by_time()` and `get_ordered_tasks()`.
 - **Conflict detection:** overlapping tasks are flagged for different pets and for the same pet, and tasks at an identical start time are flagged. Three tasks at the same time produce all three pairs, and back-to-back tasks are not flagged.
 - **Schedule edge cases:** completed tasks stay in a generated schedule so `filter_tasks(completed=True)` works, and a task that runs past midnight appears on the next day's schedule and conflicts with an early task there.
@@ -105,11 +106,11 @@ Sample test output:
 platform darwin -- Python 3.12.4, pytest-9.1.1, pluggy-1.6.0
 rootdir: /Users/ddbutler/Desktop/Codepath/ai_eng/ai110-module2show-pawpal-starter
 plugins: anyio-4.15.1
-collected 18 items                                                                                                                                                                                            
+collected 26 items                                                                                                                                                                                            
 
-tests/test_pawpal.py ..................                                                                                                                                                                 [100%]
+tests/test_pawpal.py ..........................                                                                                                                                                         [100%]
 
-============================================================================================= 18 passed in 0.01s ==============================================================================================
+============================================================================================= 26 passed in 0.04s ==============================================================================================
 ```
 
 My confidence level for this system is 4 oout of 5 stars. Test cases pass expected behavior and end to end testing with the UI behaves as expected. However, future extensions could break behavior or there may be edge cases unaccounted for.
@@ -125,7 +126,7 @@ All of these live in `pawpal_system.py`. The scheduling methods are on `Schedule
 | Filtering                  | `Schedule.filter_tasks(owner, completed, pet_name)` | Filter by completion status, pet name, or both. A filter left as `None` is ignored. Pet names match case-insensitively; an unknown name returns an empty list. |
 | Conflict detection         | `Schedule.detect_conflicts()`                | Sorts by start time, then sweeps once, keeping only the tasks still running. Returns every overlapping pair in O(n log n + overlaps). Windows are half-open, so back-to-back tasks don't conflict. Checks across all pets and covers identical start times. |
 | Conflict warnings          | `Schedule.conflict_warnings(owner)`          | Turns each conflicting pair into a readable message, marked "both for Buddy" (same pet) or "Buddy vs Whiskers" (different pets). Returns a list instead of raising, so a conflict never crashes the app. `app.py` shows each one with `st.warning`. |
-| Recurring tasks            | `Task.next_occurrence(new_id)`, `Pet.complete_task(task)` | `complete_task` marks the task done and, for a `DAILY` or `WEEKLY` task, appends the next occurrence, which `next_occurrence` builds as a copy shifted by the recurrence interval. If that time is already past (an overdue task), it advances in whole intervals until it is in the future, keeping the original time of day. Completing the same task twice returns `None` and creates no duplicate. |
+| Recurring tasks            | `Pet.ensure_occurrences(horizon)`, `Pet.complete_task(task)`, `Task.next_occurrence(new_id)` | A `DAILY` or `WEEKLY` task becomes a series (`series_id`). `ensure_occurrences` creates its future instances up to a rolling `HORIZON_DAYS` (7) window, skipping past times and ones that already exist, so it is safe to call repeatedly. `Owner.get_schedule` calls it for every pet. `complete_task` marks the task done, returns the next occurrence (new or already created), and tops up the window. Instances keep the original time of day. Completing the same task twice returns `None` and creates no duplicate. |
 
 ### Example
 
@@ -140,14 +141,107 @@ buddy.complete_task(task)                                  # also creates tomorr
 
 `python main.py` runs each of these on sample data, including tasks added out of order and tasks at the same time.
 
+## Features
+
+- **Sorting by time**: `sort_by_time()` orders a day's tasks by start time. The sort is stable, so tasks that start together keep their existing order. The UI's "Start time only" option uses it.
+- **Priority-aware ordering**: `get_ordered_tasks()` sorts by start time. Ties go to the higher priority, then to the lower task ID. This is the UI's default sort.
+- **Conflict warnings**: `detect_conflicts()` sweeps the tasks in start order and keeps only those still running, so it costs O(n log n + overlaps) rather than comparing every pair.
+  - It checks across all pets, because the owner can only do one thing at a time.
+  - Windows are half-open, so back-to-back tasks are not conflicts.
+  - Completed tasks are ignored.
+  - `conflict_warnings()` turns each overlapping pair into a readable message ("both for Buddy" or "Buddy vs Whiskers") and never raises.
+  - The app also rechecks the day right after you add a task.
+- **Daily and weekly recurrence**: a task set to repeat becomes a series, and its future instances are created ahead of time for a rolling 7-day window (`HORIZON_DAYS`).
+  - The window is topped up whenever a schedule is built and whenever a recurring task is completed.
+  - Each instance keeps the original time of day and gets a fresh task ID.
+  - Times already in the past are skipped, and instances that already exist are never duplicated, so repeated calls are safe.
+  - Completing a recurring task marks only that instance done and returns the next one. Completing the same task twice does nothing.
+- **Filtering**: `filter_tasks()` narrows the schedule by pet name (case-insensitive), by status (Pending or Done), or both. It never changes the underlying schedule.
+- **Always-fresh daily schedule**: `Owner.get_schedule(day)` rebuilds the schedule from current tasks each time, so it is never stale. It includes completed tasks, and tasks that start the previous evening and run past midnight.
+- **Input validation**: the code rejects non-positive durations, negative pet ages, emails without "@", duplicate pet or task IDs, and tasks added to the wrong pet.
+
+
 ## 📸 Demo Walkthrough
 
-Describe your app in numbered steps so a reader can follow along without watching a video:
+Run the app with `streamlit run app.py`. The page is laid out top to bottom, so you can follow it in order.
 
-1. <!-- Describe this step -->
-2. <!-- Describe this step -->
-3. <!-- Describe this step -->
-4. <!-- Describe this step -->
-5. <!-- Add more steps as needed -->
+### The main UI features
+
+1. **Owner:** edit the owner's name at the top of the page.
+2. **Pets:** the "Add pet" form takes a name, species (dog, cat, other) and age. Added pets appear in a table below it.
+3. **Tasks:** once there is at least one pet, the "Add task" form lets you pick the pet, then set a description, category, duration (1-240 minutes), priority, date, start time, and whether it repeats (None, Daily, Weekly). Invalid input shows an error instead of crashing.
+4. **Schedule:** pick a day to see that day's plan. You can sort by "Start time, then priority" or "Start time only", filter by pet and by status (All, Pending, Done), and mark a pending task complete with its ✓ button.
+
+### An example workflow
+
+1. Add a pet: enter "Mochi", choose dog, age 3, and click **Add pet**. Mochi appears in the pets table.
+2. Add a daily task: choose Mochi, enter "Morning walk" (walk, 30 minutes, High priority), set today's date and a start time of 7:30 AM, set **Repeats** to Daily, and click **Add task**.
+3. Add a second task that overlaps it: for example "Breakfast" (feeding, 10 minutes) at 7:45 AM. A conflict warning appears right away.
+4. View today's schedule in the **Schedule** section. The tasks appear in time order with the conflict banner above the table.
+5. Change the day to tomorrow. Because the walk repeats, it is already listed there, up to 7 days ahead.
+6. Click ✓ on the walk. A toast confirms it is done and names the next occurrence. Set **Status** to Done to see it in the filtered table.
+
+### Scheduler behaviors you can see
+
+1. **Sorting:** the table follows the chosen sort mode. Ties at the same start time go to the higher priority first.
+2. **Conflict warnings:** overlapping tasks are listed under a red banner ("N scheduling conflict(s)"), each marked "both for Mochi" or "Mochi vs Luna". Back-to-back tasks are not flagged, and the banner always covers the whole day, even when the table is filtered.
+3. **Filtering:** pet and status filters narrow the table without changing the schedule.
+4. **Recurrence:** daily and weekly tasks show up on upcoming days without being re-entered, and completing one never creates a duplicate.
+
+### Sample CLI output
+
+`python main.py` runs the same logic on sample data. It shows sorting, each filter, and conflict detection, first with no overlaps and then after adding tasks that share a start time:
+
+```
+Today's Schedule for Darren - Sunday, October 18, 2026
+============================================================
+
+Entries as generated (insertion order)
+------------------------------------------------------------
+  06:00 PM - 06:20 PM  Grooming brush-out   (Buddy, pending)
+  07:30 AM - 08:00 AM  Morning walk         (Buddy, pending)
+  12:30 PM - 12:35 PM  Thyroid medication   (Whiskers, pending)
+  08:00 AM - 08:10 AM  Breakfast            (Whiskers, pending)
+
+sort_by_time()
+------------------------------------------------------------
+  07:30 AM - 08:00 AM  Morning walk         (Buddy, pending)
+  08:00 AM - 08:10 AM  Breakfast            (Whiskers, pending)
+  12:30 PM - 12:35 PM  Thyroid medication   (Whiskers, pending)
+  06:00 PM - 06:20 PM  Grooming brush-out   (Buddy, pending)
+
+filter_tasks(completed=False)
+------------------------------------------------------------
+  08:00 AM - 08:10 AM  Breakfast            (Whiskers, pending)
+  12:30 PM - 12:35 PM  Thyroid medication   (Whiskers, pending)
+  06:00 PM - 06:20 PM  Grooming brush-out   (Buddy, pending)
+
+filter_tasks(completed=True)
+------------------------------------------------------------
+  07:30 AM - 08:00 AM  Morning walk         (Buddy, done)
+
+filter_tasks(pet_name='whiskers')
+------------------------------------------------------------
+  08:00 AM - 08:10 AM  Breakfast            (Whiskers, pending)
+  12:30 PM - 12:35 PM  Thyroid medication   (Whiskers, pending)
+
+filter_tasks(completed=False, pet_name='Buddy')
+------------------------------------------------------------
+  06:00 PM - 06:20 PM  Grooming brush-out   (Buddy, pending)
+
+filter_tasks(pet_name='Nobody')
+------------------------------------------------------------
+  (none)
+
+Conflict check (no overlaps expected)
+------------------------------------------------------------
+  No conflicts.
+
+Conflict check after adding same-time tasks
+------------------------------------------------------------
+  Warning: 'Teeth brushing' (10:00 AM-10:10 AM) overlaps 'Training' (10:00 AM-10:15 AM) [both for Buddy]
+  Warning: 'Vet visit' (03:00 PM-03:30 PM) overlaps 'Playtime' (03:00 PM-03:20 PM) [Buddy vs Whiskers]
+```
 
 **Screenshot or video** _(optional)_: <!-- Insert a screenshot or link to a demo video here -->
+![alt text](screenshot.png)

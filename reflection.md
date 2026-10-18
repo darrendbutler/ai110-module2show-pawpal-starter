@@ -184,8 +184,10 @@ The Ai initially suggested a due_time for tasks. It assumed that tasks should be
 **a. What you tested**
 
 - What behaviors did you test?
-- Why were these tests important?
+I tested behaviors for adding a pet, adding a task, detecting conflicts, and creating recurring tasks. 
 
+- Why were these tests important?
+These tests were important because they represent core functionality for the application and helpful features for the user. Also, detecting conflicts and creating recurring tasks could be performed in several ways. It was important to verify that the tests for these aligned with data that would result from an actual user interaction and expectation. 
 
 
 **b. Confidence**
@@ -200,11 +202,26 @@ The Ai initially suggested a due_time for tasks. It assumed that tasks should be
 **a. What went well**
 
 - What part of this project are you most satisfied with?
+I am satisfied with the clan structure the backend system and the algorithms for scheduling.
 
 **b. What you would improve**
 
 - If you had another iteration, what would you improve or redesign?
+I made another iteration I would improve the way recurring tasks are populated in the schedule. Currently, the schedule doesn't grab future instances very well. They are created in the backend, but currently the system creates recurring tasks but does not always display them when generating a future schedule. 
 
 **c. Key takeaway**
 
 - What is one important thing you learned about designing systems or working with AI on this project?
+I learned that communicating a clear idea for the system objects and relationships is key step that determines the cohesion of a system. Also, there are design tradeoffs that are not necessarily right or wrong, but important to decide on for what may be most valuable for a user.
+
+### AI Straegy
+
+Which AI coding assistant features were most effective for building your scheduler?
+
+- I would ask how I can accopmplish something before asking the AI to implement. It was useful for the AI to layout a bullet list of a plan before implemenation that I could review I remained in the loop.
+
+Give one example of an AI suggestion you rejected or modified to keep your system design clean.
+- The AI initially suggested creating recurrences when the previous item is completed. However, I rejected that suggestion because it did not account for when a user forgets to complete a task. 
+
+How did using separate chat sessions for different phases help you stay organized?
+- Haiving multiple chat sessions allowed me to go back to previous chats for specific features so I could track the development of each feature and return to previous ideas. 

@@ -2,7 +2,7 @@ import streamlit as st
 
 from datetime import date, datetime
 
-from pawpal_system import Category, Owner, Pet, Priority, Task
+from pawpal_system import Category, Owner, Pet, Priority, Recurrence, Task
 
 st.set_page_config(page_title="PawPal+", page_icon="🐾", layout="centered")
 
@@ -91,9 +91,12 @@ if owner.pets:
         priority = c3.selectbox(
             "Priority", list(Priority), index=2, format_func=lambda p: p.name.title()
         )
-        c4, c5 = st.columns(2)
+        c4, c5, c6 = st.columns(3)
         day = c4.date_input("Date", value=date.today())
         start = c5.time_input("Start time", value=datetime.now().replace(minute=0).time())
+        recurrence = c6.selectbox(
+            "Repeats", list(Recurrence), format_func=lambda r: r.value.title()
+        )
         if st.form_submit_button("Add task"):
             try:
                 pet.add_task(
@@ -105,56 +108,89 @@ if owner.pets:
                         duration_minutes=int(duration),
                         priority=priority,
                         start_time=datetime.combine(day, start),
+                        recurrence=recurrence,
                     )
                 )
                 st.success(f"Added task for {pet.name}.")
+                # Warn right away if the new task collides with something on its day.
+                for warning in owner.get_schedule(day).conflict_warnings(owner):
+                    st.warning(warning)
             except ValueError as e:
                 st.error(str(e))
-
-    all_tasks = [(p, t) for p in owner.pets for t in p.tasks]
-    if all_tasks:
-        st.table(
-            [
-                {
-                    "pet": p.name,
-                    "task": t.description,
-                    "category": t.category.value,
-                    "start": t.start_time.strftime("%Y-%m-%d %H:%M"),
-                    "minutes": t.duration_minutes,
-                    "priority": t.priority.name.title(),
-                    "done": t.completed,
-                }
-                for p, t in all_tasks
-            ]
-        )
-    else:
-        st.info("No tasks yet. Add one above.")
 else:
     st.info("Add a pet before scheduling tasks.")
 
 st.divider()
 
-st.subheader("Build Schedule")
-day = st.date_input("Schedule for", value=date.today(), key="schedule_day")
-
-if st.button("Generate schedule"):
+st.subheader("Schedule")
+if not owner.pets:
+    st.info("Add a pet and some tasks to see a schedule.")
+else:
+    day = st.date_input("Schedule for", value=date.today(), key="schedule_day")
+    # Rebuilt on every rerun, so it always reflects the latest tasks.
     schedule = owner.get_schedule(day)
-    ordered = schedule.get_ordered_tasks()
-    if not ordered:
-        st.info(f"No tasks on {day}.")
+
+    f1, f2, f3 = st.columns(3)
+    sort_mode = f1.radio(
+        "Sort by", ["Start time, then priority", "Start time only"]
+    )
+    pet_filter = f2.selectbox("Pet", ["All pets"] + [p.name for p in owner.pets])
+    status_filter = f3.selectbox("Status", ["All", "Pending", "Done"])
+
+    # Conflicts are checked against the whole day, regardless of the filters.
+    conflicts = schedule.conflict_warnings(owner)
+    if conflicts:
+        st.error(f"{len(conflicts)} scheduling conflict(s) on {day}:")
+        for warning in conflicts:
+            st.warning(warning)
     else:
-        pet_names = {p.pet_id: p.name for p in owner.pets}
+        st.success(f"No conflicts on {day}.")
+
+    if sort_mode == "Start time only":
+        schedule.sort_by_time()
+    else:
+        schedule.entries = schedule.get_ordered_tasks()
+    visible = schedule.filter_tasks(
+        owner,
+        completed={"All": None, "Pending": False, "Done": True}[status_filter],
+        pet_name=None if pet_filter == "All pets" else pet_filter,
+    )
+
+    if not visible:
+        st.info(f"No matching tasks on {day}.")
+    else:
+        pets_by_id = {p.pet_id: p for p in owner.pets}
         st.table(
             [
                 {
                     "time": f"{t.start_time:%H:%M}-{t.end_time:%H:%M}",
-                    "pet": pet_names[t.pet_id],
+                    "pet": pets_by_id[t.pet_id].name,
                     "task": t.description,
+                    "category": t.category.value,
                     "priority": t.priority.name.title(),
+                    "repeats": t.recurrence.value.title(),
                     "status": "Done" if t.completed else "Pending",
                 }
-                for t in ordered
+                for t in visible
             ]
         )
-        for warning in schedule.conflict_warnings(owner):
-            st.warning(warning)
+
+        pending = [t for t in visible if not t.completed]
+        if pending:
+            st.markdown("**Mark a task complete**")
+            for t in pending:
+                pet = pets_by_id[t.pet_id]
+                label = f"{t.start_time:%H:%M} {pet.name}: {t.description}"
+                if st.button(f"✓ {label}", key=f"done_{t.pet_id}_{t.task_id}"):
+                    nxt = pet.complete_task(t)
+                    if nxt is not None:
+                        st.session_state.flash = (
+                            f"Completed '{t.description}'. Next one scheduled for "
+                            f"{nxt.start_time:%Y-%m-%d %H:%M}."
+                        )
+                    else:
+                        st.session_state.flash = f"Completed '{t.description}'."
+                    st.rerun()
+
+if "flash" in st.session_state:
+    st.toast(st.session_state.pop("flash"))

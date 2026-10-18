@@ -19,7 +19,7 @@ classDiagram
         +add_task(task: Task)
         +remove_task(task: Task)
         +get_pending_tasks() List~Task~
-        +complete_task(task: Task) Task
+        +complete_task(task: Task) Task | None
     }
 
     class Task {
@@ -30,19 +30,23 @@ classDiagram
         +int duration_minutes
         +Priority priority
         +datetime start_time
-        +datetime end_time (derived)
+        +datetime end_time «derived property»
         +bool completed
         +Recurrence recurrence
         +mark_complete()
         +reschedule(new_time: datetime)
-        +next_occurrence(new_id: int) Task
+        +next_occurrence(new_id: int) Task | None
     }
 
     class Schedule {
         +date day
         +List~Task~ entries
-        +generate(owner: Owner) filters by day
+        -_runs_on_day(task: Task) bool
+        +generate(owner: Owner)
         +add_entry(task: Task)
+        +filter_tasks(owner: Owner, completed: bool, pet_name: str) List~Task~
+        +conflict_warnings(owner: Owner) List~str~
+        +sort_by_time() List~Task~
         +detect_conflicts() List~Tuple~Task, Task~~
         +get_ordered_tasks() List~Task~
     }
@@ -70,14 +74,21 @@ classDiagram
         NONE
         DAILY
         WEEKLY
+        +interval timedelta | None
     }
+
+    note for Schedule "generate() includes completed tasks and tasks running past midnight into the day.\nentries hold references to the same Task objects as Pet.tasks (not copies)."
 
     Owner "1" *-- "0..*" Pet : owns
     Pet "1" *-- "0..*" Task : has
     Schedule "1" o-- "0..*" Task : organizes
-    Owner "1" --> "0..*" Schedule : plans with (one per day)
-    Schedule ..> Owner : reads pets from
+    Owner "1" --> "0..*" Schedule : caches (one per day, rebuilt on each get_schedule)
+    Owner ..> Schedule : creates
+    Schedule ..> Owner : reads pets from (generate, filter_tasks, conflict_warnings)
     Task ..> Pet : pet_id refers to
+    Task ..> Task : creates next occurrence
+    Pet ..> Task : creates recurring instance (complete_task)
     Task --> Category
     Task --> Priority
     Task --> Recurrence
+    Task ..> Recurrence : uses interval
