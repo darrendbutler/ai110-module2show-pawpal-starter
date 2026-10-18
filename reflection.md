@@ -225,3 +225,7 @@ Give one example of an AI suggestion you rejected or modified to keep your syste
 
 How did using separate chat sessions for different phases help you stay organized?
 - Haiving multiple chat sessions allowed me to go back to previous chats for specific features so I could track the development of each feature and return to previous ideas. 
+
+Summarize what you learned about being the "lead architect" when collaborating with powerful AI tools.
+
+- I learned that it takes intentional decision making to define design choices for a system and evaluating trade off. AI is fast at implementation but the human is better at defining the desired outcome.
