@@ -142,7 +142,12 @@ class Pet:
             The newly created next occurrence, which is also appended to
             self.tasks. None for non-recurring tasks and for tasks already
             completed, so completing twice never creates duplicate occurrences.
+
+        Raises:
+            ValueError: if the task is not one of this pet's tasks.
         """
+        if not any(t is task for t in self.tasks):
+            raise ValueError(f"Task {task.task_id} not found for pet {self.pet_id}")
         if task.completed:
             return None
         task.mark_complete()
@@ -193,20 +198,29 @@ class Schedule:
     day: date
     entries: list[Task] = field(default_factory=list)
 
+    def _runs_on_day(self, task: Task) -> bool:
+        """True if the task starts on self.day or is still running into it."""
+        last_moment = task.end_time - timedelta(microseconds=1)
+        return task.start_time.date() <= self.day <= last_moment.date()
+
     def generate(self, owner: Owner) -> None:
-        """Rebuild entries from the owner's pending tasks that start on self.day."""
+        """Rebuild entries from all of the owner's tasks that run on self.day.
+
+        Includes completed tasks (so filter_tasks(completed=True) works) and tasks
+        that started the previous day but run past midnight into self.day.
+        """
         self.entries = [
             task
             for pet in owner.pets
-            for task in pet.get_pending_tasks()
-            if task.start_time.date() == self.day
+            for task in pet.tasks
+            if self._runs_on_day(task)
         ]
 
     def add_entry(self, task: Task) -> None:
-        """Add a task that starts on this schedule's day."""
-        if task.start_time.date() != self.day:
+        """Add a task that runs on this schedule's day."""
+        if not self._runs_on_day(task):
             raise ValueError(
-                f"Task {task.task_id} does not start on {self.day}"
+                f"Task {task.task_id} does not run on {self.day}"
             )
         if any(
             e.pet_id == task.pet_id and e.task_id == task.task_id
@@ -283,7 +297,7 @@ class Schedule:
         the next one starts, so cost is O(n log n + overlaps) rather than
         comparing all pairs. Applies across pets: the owner can only do one
         thing at a time. Windows are half-open, so a task that starts exactly
-        when another ends is not a conflict.
+        when another ends is not a conflict. Completed tasks are ignored.
 
         Returns:
             (earlier, later) pairs, where earlier starts no later than later.
@@ -291,7 +305,8 @@ class Schedule:
         """
         conflicts: list[tuple[Task, Task]] = []
         active: list[Task] = []
-        for task in sorted(self.entries, key=lambda t: t.start_time):
+        pending = (t for t in self.entries if not t.completed)
+        for task in sorted(pending, key=lambda t: t.start_time):
             active = [a for a in active if a.end_time > task.start_time]
             conflicts.extend((a, task) for a in active)
             active.append(task)

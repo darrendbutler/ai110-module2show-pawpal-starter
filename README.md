@@ -81,9 +81,18 @@ Ownership chain: Owner → Pet → Task. Each Task stores its pet_id and Pet.add
 
 ## 🧪 Testing PawPal+
 
+The suite lives in `tests/test_pawpal.py` and has 18 tests covering the scheduling behaviors that matter most:
+
+- **Task and pet basics:** marking a task complete changes its status, and adding tasks to a pet grows its task list.
+- **Recurring tasks:** completing a daily task creates a new pending task exactly one day later (a weekly task, one week later), with a new ID and the same time of day. Non-recurring tasks create nothing, and completing the same task twice never creates a duplicate. An overdue recurring task rolls forward in whole intervals to the next future time. A recurring task is only scheduled one occurrence at a time, so days further out are empty until the next one is completed.
+- **Sorting:** tasks added out of order, across multiple pets, come back in chronological order from both `sort_by_time()` and `get_ordered_tasks()`.
+- **Conflict detection:** overlapping tasks are flagged for different pets and for the same pet, and tasks at an identical start time are flagged. Three tasks at the same time produce all three pairs, and back-to-back tasks are not flagged.
+- **Schedule edge cases:** completed tasks stay in a generated schedule so `filter_tasks(completed=True)` works, and a task that runs past midnight appears on the next day's schedule and conflicts with an early task there.
+- **Error handling:** completing a task that doesn't belong to the pet raises `ValueError` and changes nothing.
+
 ```bash
 # Run the full test suite:
-pytest
+python -m pytest
 
 # Run with coverage:
 pytest --cov
@@ -92,8 +101,18 @@ pytest --cov
 Sample test output:
 
 ```
-# Paste your pytest output here
+============================================================================================= test session starts =============================================================================================
+platform darwin -- Python 3.12.4, pytest-9.1.1, pluggy-1.6.0
+rootdir: /Users/ddbutler/Desktop/Codepath/ai_eng/ai110-module2show-pawpal-starter
+plugins: anyio-4.15.1
+collected 18 items                                                                                                                                                                                            
+
+tests/test_pawpal.py ..................                                                                                                                                                                 [100%]
+
+============================================================================================= 18 passed in 0.01s ==============================================================================================
 ```
+
+My confidence level for this system is 4 oout of 5 stars. Test cases pass expected behavior and end to end testing with the UI behaves as expected. However, future extensions could break behavior or there may be edge cases unaccounted for.
 
 ## 📐 Smarter Scheduling
 

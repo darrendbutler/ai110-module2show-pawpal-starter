@@ -77,7 +77,13 @@ else:
 st.markdown("### Tasks")
 if owner.pets:
     with st.form("add_task", clear_on_submit=False):
-        pet = st.selectbox("Pet", owner.pets, format_func=lambda p: p.name)
+        # Newer Streamlit returns a *copy* of the selected option, so select by
+        # id and look up the real Pet, or add_task would mutate a throwaway copy.
+        pet_names = {p.pet_id: p.name for p in owner.pets}
+        selected_pet_id = st.selectbox(
+            "Pet", list(pet_names), format_func=lambda pid: pet_names[pid]
+        )
+        pet = next(p for p in owner.pets if p.pet_id == selected_pet_id)
         description = st.text_input("Task description", value="Morning walk")
         c1, c2, c3 = st.columns(3)
         category = c1.selectbox("Category", list(Category), format_func=lambda c: c.value)
@@ -135,7 +141,7 @@ if st.button("Generate schedule"):
     schedule = owner.get_schedule(day)
     ordered = schedule.get_ordered_tasks()
     if not ordered:
-        st.info(f"No pending tasks on {day}.")
+        st.info(f"No tasks on {day}.")
     else:
         pet_names = {p.pet_id: p.name for p in owner.pets}
         st.table(
@@ -145,6 +151,7 @@ if st.button("Generate schedule"):
                     "pet": pet_names[t.pet_id],
                     "task": t.description,
                     "priority": t.priority.name.title(),
+                    "status": "Done" if t.completed else "Pending",
                 }
                 for t in ordered
             ]
