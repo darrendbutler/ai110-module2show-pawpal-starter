@@ -245,3 +245,30 @@ Conflict check after adding same-time tasks
 
 **Screenshot or video** _(optional)_: <!-- Insert a screenshot or link to a demo video here -->
 ![alt text](screenshot.png)
+
+### Persistence Workflow
+
+PawPal+ remembers the owner, pets and tasks between runs by saving them to `data.json`. The file is created in the folder you launch the app from, so run `streamlit run app.py` from the project folder.
+
+**How it works**
+
+1. **Serialization:** `pawpal_system.py` defines three [marshmallow](https://marshmallow.readthedocs.io/) schemas, `TaskSchema`, `PetSchema` and `OwnerSchema`. Each lists a class's fields once and handles both directions: turning objects into JSON and validating JSON back into objects. Enums are saved by value (`"walk"`, `3`, `"daily"`) and `start_time` as an ISO 8601 string.
+2. **Saving:** `Owner.save_to_json(path="data.json")` writes the whole tree (owner → pets → tasks) in one call. `Owner.schedules` is not saved, because `get_schedule()` rebuilds it from the tasks.
+3. **Loading:** `Owner.load_from_json(path="data.json")` reads the file and rebuilds the dataclasses. Their `__post_init__` checks run again, so a hand-edited file with a bad duration, age, email or category is rejected.
+4. **In the app:** at startup `app.py` calls `load_owner()`, which loads `data.json`, or starts a new default owner if the file doesn't exist. After every change (renaming the owner, adding a pet, adding a task, marking a task complete) it calls `save_owner()`, so the file always matches what is on screen.
+5. **Bad data:** if `data.json` can't be read or fails validation, it is renamed to `data.json.bak` (so the next save can't overwrite it) and the app starts fresh with a notice. If a save fails, the app shows an error instead of crashing.
+
+Recurring tasks created ahead of time by `get_schedule()` are saved along with the next change. If they are missing from the file, they are recreated automatically.
+
+**Files modified**
+
+| File                  | Change                                                                                                                                  |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `pawpal_system.py`    | Added the `DATA_FILE` constant, the three schemas, and `Owner.save_to_json` / `Owner.load_from_json`.                                    |
+| `app.py`              | Added `load_owner()` and `save_owner()`; loads at startup and saves after each change.                                                  |
+| `tests/test_pawpal.py` | Added a save/load round-trip test, a test that invalid data raises (three bad files), and a test that a missing file raises `FileNotFoundError`. |
+| `requirements.txt`    | Added `marshmallow>=3.18` (needed for `fields.Enum`).                                                                                   |
+| `.gitignore`          | Added `data.json` so personal pet data isn't committed.                                                                                 |
+| `README.md`           | Added this section.                                                                                                                     |
+
+To reset the app to a blank state, delete `data.json`.

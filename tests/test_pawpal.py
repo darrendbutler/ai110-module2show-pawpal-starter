@@ -1,6 +1,7 @@
 from datetime import date, datetime, timedelta
 
 import pytest
+from marshmallow import ValidationError
 
 from pawpal_system import HORIZON_DAYS, Category, Owner, Pet, Priority, Recurrence, Task
 
@@ -381,3 +382,47 @@ def test_get_schedule_shows_upcoming_occurrences_without_completion():
     day = (start + timedelta(days=3)).date()
 
     assert len(owner.get_schedule(day).entries) == 1
+
+
+def test_save_and_load_round_trip(tmp_path):
+    """An owner with pets and tasks is identical after save_to_json and load_from_json."""
+    owner = Owner(1, "Darren", "d@example.com")
+    pet = Pet(1, "Mochi", "dog", 3)
+    owner.add_pet(pet)
+    pet.add_task(make_task())
+    done = make_task(task_id=2)
+    done.recurrence = Recurrence.DAILY
+    done.mark_complete()
+    pet.add_task(done)
+
+    path = tmp_path / "data.json"
+    owner.save_to_json(path)
+
+    assert Owner.load_from_json(path) == owner
+
+
+@pytest.mark.parametrize(
+    "contents",
+    [
+        '{"owner_id": 1}',  # required fields missing
+        '{"owner_id": 1, "name": "D", "email": "no-at-sign", "pets": []}',
+        '{"owner_id": 1, "name": "D", "email": "d@x.com", "pets": [{"pet_id": 1,'
+        ' "name": "M", "species": "dog", "age": 3, "tasks": [{"task_id": 1,'
+        ' "pet_id": 1, "description": "w", "category": "bogus",'
+        ' "duration_minutes": 30, "priority": 3,'
+        ' "start_time": "2030-01-01T08:00:00"}]}]}',  # unknown category
+    ],
+)
+def test_load_from_json_rejects_invalid_data(tmp_path, contents):
+    """Invalid saved data raises instead of producing a half-built owner."""
+    path = tmp_path / "data.json"
+    path.write_text(contents)
+
+    with pytest.raises((ValidationError, ValueError)):
+        Owner.load_from_json(path)
+
+
+def test_load_from_json_missing_file_raises(tmp_path):
+    """Loading before anything was saved raises FileNotFoundError."""
+    with pytest.raises(FileNotFoundError):
+        Owner.load_from_json(tmp_path / "data.json")

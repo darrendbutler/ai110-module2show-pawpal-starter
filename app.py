@@ -1,8 +1,19 @@
 import streamlit as st
 
 from datetime import date, datetime
+from pathlib import Path
 
-from pawpal_system import Category, Owner, Pet, Priority, Recurrence, Task
+from marshmallow import ValidationError
+
+from pawpal_system import (
+    DATA_FILE,
+    Category,
+    Owner,
+    Pet,
+    Priority,
+    Recurrence,
+    Task,
+)
 
 st.set_page_config(page_title="PawPal+", page_icon="🐾", layout="centered")
 
@@ -42,12 +53,36 @@ At minimum, your system should:
 
 st.divider()
 
+def load_owner() -> Owner:
+    """Load the saved owner, or start fresh if there is no usable data file."""
+    try:
+        return Owner.load_from_json()
+    except FileNotFoundError:
+        pass
+    except (ValidationError, ValueError) as e:
+        # Keep the unreadable file instead of overwriting it on the next save.
+        Path(DATA_FILE).replace(f"{DATA_FILE}.bak")
+        st.session_state.flash = f"Could not read {DATA_FILE} ({e}); saved it as {DATA_FILE}.bak."
+    return Owner(owner_id=1, name="Jordan", email="jordan@example.com")
+
+
+def save_owner() -> None:
+    """Persist the owner after a change; call after every mutation."""
+    try:
+        owner.save_to_json()
+    except OSError as e:
+        st.error(f"Could not save to {DATA_FILE}: {e}")
+
+
 if "owner" not in st.session_state:
-    st.session_state.owner = Owner(owner_id=1, name="Jordan", email="jordan@example.com")
+    st.session_state.owner = load_owner()
 owner: Owner = st.session_state.owner
 
 st.subheader("Owner")
-owner.name = st.text_input("Owner name", value=owner.name)
+new_name = st.text_input("Owner name", value=owner.name)
+if new_name != owner.name:
+    owner.name = new_name
+    save_owner()
 
 st.subheader("Pets")
 with st.form("add_pet", clear_on_submit=True):
@@ -65,6 +100,7 @@ with st.form("add_pet", clear_on_submit=True):
                     age=int(age),
                 )
             )
+            save_owner()
             st.success(f"Added {pet_name}.")
         except ValueError as e:
             st.error(str(e))
@@ -111,6 +147,7 @@ if owner.pets:
                         recurrence=recurrence,
                     )
                 )
+                save_owner()
                 st.success(f"Added task for {pet.name}.")
                 # Warn right away if the new task collides with something on its day.
                 for warning in owner.get_schedule(day).conflict_warnings(owner):
@@ -183,6 +220,7 @@ else:
                 label = f"{t.start_time:%H:%M} {pet.name}: {t.description}"
                 if st.button(f"✓ {label}", key=f"done_{t.pet_id}_{t.task_id}"):
                     nxt = pet.complete_task(t)
+                    save_owner()
                     if nxt is not None:
                         st.session_state.flash = (
                             f"Completed '{t.description}'. Next one scheduled for "

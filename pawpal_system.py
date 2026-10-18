@@ -3,8 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 from enum import Enum, IntEnum
+from pathlib import Path
+
+from marshmallow import Schema, fields, post_load
 
 
+DATA_FILE = "data.json"  # default location for Owner.save_to_json / load_from_json
 HORIZON_DAYS = 7  # how many days ahead recurring tasks are materialized
 
 
@@ -253,6 +257,24 @@ class Owner:
         self.schedules[day] = schedule
         return schedule
 
+    def save_to_json(self, path: str | Path = DATA_FILE) -> None:
+        """Write the owner, their pets and all tasks to a JSON file.
+
+        Schedules are not saved: get_schedule rebuilds them from the tasks.
+        """
+        Path(path).write_text(OwnerSchema().dumps(self, indent=2))
+
+    @classmethod
+    def load_from_json(cls, path: str | Path = DATA_FILE) -> Owner:
+        """Read an owner saved by save_to_json.
+
+        Raises:
+            FileNotFoundError: if path does not exist.
+            marshmallow.ValidationError: if the file is malformed or a value is
+                invalid (bad enum value, non-positive duration, negative age...).
+        """
+        return OwnerSchema().loads(Path(path).read_text())
+
 
 @dataclass
 class Schedule:
@@ -378,3 +400,49 @@ class Schedule:
         return sorted(
             self.entries, key=lambda t: (t.start_time, -t.priority, t.task_id)
         )
+
+
+# --- JSON persistence (marshmallow) -----------------------------------------
+# Each schema turns a dataclass into plain dicts (dump) and back (load).
+# post_load builds the dataclass, so __post_init__ validation runs on load too.
+
+
+class TaskSchema(Schema):
+    task_id = fields.Int(required=True)
+    pet_id = fields.Int(required=True)
+    description = fields.Str(required=True)
+    category = fields.Enum(Category, by_value=True, required=True)
+    duration_minutes = fields.Int(required=True)
+    priority = fields.Enum(Priority, by_value=True, required=True)
+    start_time = fields.DateTime(required=True)  # ISO 8601
+    completed = fields.Bool(load_default=False)
+    recurrence = fields.Enum(Recurrence, by_value=True, load_default=Recurrence.NONE)
+    series_id = fields.Int(allow_none=True, load_default=None)
+
+    @post_load
+    def make_task(self, data: dict, **kwargs) -> Task:
+        return Task(**data)
+
+
+class PetSchema(Schema):
+    pet_id = fields.Int(required=True)
+    name = fields.Str(required=True)
+    species = fields.Str(required=True)
+    age = fields.Int(required=True)
+    tasks = fields.List(fields.Nested(TaskSchema), load_default=list)
+
+    @post_load
+    def make_pet(self, data: dict, **kwargs) -> Pet:
+        return Pet(**data)
+
+
+class OwnerSchema(Schema):
+    owner_id = fields.Int(required=True)
+    name = fields.Str(required=True)
+    email = fields.Str(required=True)
+    pets = fields.List(fields.Nested(PetSchema), load_default=list)
+    # schedules are derived data, so they are deliberately left out
+
+    @post_load
+    def make_owner(self, data: dict, **kwargs) -> Owner:
+        return Owner(**data)
